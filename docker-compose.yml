@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:14-3.3
+    container_name: claude_logistics_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-claude_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claude_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-claude_logistics}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude_user} -d ${POSTGRES_DB:-claude_logistics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - claude_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: claude_logistics_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - claude_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude_logistics_app
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://claude_user:claude_pass@postgres:5432/claude_logistics}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DEBUG: ${DEBUG:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - claude_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  claude_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

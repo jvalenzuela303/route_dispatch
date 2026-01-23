@@ -1,0 +1,40 @@
+.
+├── alembic.ini
+├── app
+│   ├── api
+│   │   ├── health.py
+│   │   └── __init__.py
+│   ├── config
+│   │   ├── __init__.py
+│   │   └── settings.py
+│   ├── __init__.py
+│   ├── main.py
+│   ├── models
+│   │   └── __init__.py
+│   ├── schemas
+│   │   └── __init__.py
+│   ├── services
+│   │   └── __init__.py
+│   └── utils
+│       └── __init__.py
+├── CLAUDE_IA_SPEC.md
+├── CLAUDE.md
+├── DEPLOYMENT_GUIDE.md
+├── docker-compose.yml
+├── Dockerfile
+├── DOCKER_SETUP.md
+├── migrations
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions
+├── PROJECT_STRUCTURE.txt
+├── README.md
+├── requirements.txt
+├── scripts
+│   ├── install_docker.sh
+│   └── validate_setup.sh
+└── tests
+    ├── conftest.py
+    └── __init__.py
+
+12 directories, 26 files
