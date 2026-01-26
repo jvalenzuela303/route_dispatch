@@ -1,0 +1,119 @@
+# Multi-stage Production Dockerfile for Claude Logistics API
+# Optimized for security, size, and performance
+
+# Build arguments
+ARG PYTHON_VERSION=3.11
+ARG BUILD_DATE
+ARG VERSION
+
+# ============================================
+# Stage 1: Builder - Install dependencies
+# ============================================
+FROM python:${PYTHON_VERSION}-slim as builder
+
+# Set build-time environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# ============================================
+# Stage 2: Production - Minimal runtime image
+# ============================================
+FROM python:${PYTHON_VERSION}-slim as production
+
+# Set runtime environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/app
+
+# Labels for metadata
+LABEL maintainer="Claude Logistics <dev@botilleria.com>"
+LABEL version="${VERSION}"
+LABEL build-date="${BUILD_DATE}"
+LABEL description="Claude Logistics API - Production"
+
+WORKDIR /app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r appuser --gid=1000 && \
+    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
+    mkdir -p /home/appuser/.local /app/logs /app/backups && \
+    chown -R appuser:appuser /home/appuser /app
+
+# Copy Python dependencies from builder stage
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Copy application code
+COPY --chown=appuser:appuser ./app ./app
+COPY --chown=appuser:appuser ./alembic.ini .
+COPY --chown=appuser:appuser ./alembic ./alembic
+
+# Create entrypoint script
+COPY --chown=appuser:appuser <<'EOF' /app/docker-entrypoint.sh
+#!/bin/bash
+set -e
+
+echo "🚀 Starting Claude Logistics API..."
+
+# Wait for database to be ready
+echo "⏳ Waiting for database..."
+until pg_isready -h postgres -U ${DB_USER} -d route_dispatch > /dev/null 2>&1; do
+  echo "   Database not ready, waiting..."
+  sleep 2
+done
+echo "✅ Database ready!"
+
+# Run migrations
+echo "🔄 Running database migrations..."
+alembic upgrade head
+echo "✅ Migrations completed!"
+
+# Start application with appropriate number of workers
+echo "🌟 Starting Uvicorn with ${UVICORN_WORKERS:-4} workers..."
+exec uvicorn app.main:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --workers ${UVICORN_WORKERS:-4} \
+  --log-level ${LOG_LEVEL:-info} \
+  --no-access-log \
+  --proxy-headers \
+  --forwarded-allow-ips='*'
+EOF
+
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Switch to non-root user
+USER appuser
+
+# Expose application port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run entrypoint script
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
