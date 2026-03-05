@@ -239,6 +239,12 @@ class Order(BaseModel):
         nullable=True,
         comment="Route this order is assigned to (null if not yet routed)"
     )
+    document_number: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default='',
+        comment="Número de boleta o factura del comprador"
+    )
     notes: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,

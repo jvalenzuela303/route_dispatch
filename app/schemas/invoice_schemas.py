@@ -4,10 +4,10 @@ Pydantic schemas for Invoice operations
 Request/response models with validation for invoice-related API endpoints
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import uuid
 
 from app.models.enums import InvoiceType
@@ -20,26 +20,39 @@ class InvoiceCreate(BaseModel):
     order_id: uuid.UUID
     invoice_number: str = Field(..., min_length=1, max_length=100)
     invoice_type: InvoiceType
-    total_amount: Decimal = Field(..., gt=0, decimal_places=2)
+    total_amount: Decimal = Field(..., gt=0)
     issued_at: Optional[datetime] = None
 
-    @validator('invoice_number')
+    @field_validator('invoice_number')
+    @classmethod
     def validate_invoice_number(cls, v):
         if not v or len(v.strip()) == 0:
             raise ValueError('Invoice number cannot be empty')
         return v.strip()
 
-    @validator('total_amount')
-    def validate_positive_amount(cls, v):
+    @field_validator('total_amount')
+    @classmethod
+    def validate_total_amount(cls, v):
         if v <= 0:
             raise ValueError('Total amount must be positive')
-        return v
+        # Round to 2 decimal places
+        return v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 class InvoiceUpdate(BaseModel):
     """Schema for updating invoice (limited fields)"""
     invoice_number: Optional[str] = Field(None, min_length=1, max_length=100)
-    total_amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    total_amount: Optional[Decimal] = Field(None, gt=0)
+
+    @field_validator('total_amount')
+    @classmethod
+    def validate_total_amount(cls, v):
+        if v is not None:
+            if v <= 0:
+                raise ValueError('Total amount must be positive')
+            # Round to 2 decimal places
+            return v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return v
 
 
 # Response schemas

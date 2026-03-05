@@ -227,15 +227,9 @@ class GeocodingService:
                 "Por favor verifique que la dirección incluya nombre de calle y número."
             )
 
-        if result.confidence == GeocodingConfidence.LOW:
-            return False, (
-                "La dirección proporcionada es demasiado ambigua para entregas precisas. "
-                "Por favor incluya el número de calle específico. "
-                f"Dirección detectada: {result.display_name or 'desconocida'}"
-            )
-
-        # HIGH or MEDIUM confidence accepted
-        if result.confidence in [GeocodingConfidence.HIGH, GeocodingConfidence.MEDIUM]:
+        # LOW confidence accepted with coordinates — OSM coverage in Rancagua is limited
+        # HIGH, MEDIUM or LOW all accepted as long as coordinates are in service area
+        if result.confidence in [GeocodingConfidence.HIGH, GeocodingConfidence.MEDIUM, GeocodingConfidence.LOW]:
             # Verify coordinates in bounding box (should already be validated, but double-check)
             if not self._validate_coordinates(result.latitude, result.longitude):
                 return False, (

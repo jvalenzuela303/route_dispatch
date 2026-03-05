@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import uuid
 
 from app.main import app
-from app.config.database import Base
+from app.models.base import Base
 from app.api.dependencies.database import get_db
 from app.models.models import User, Role, Order, Invoice
 from app.models.enums import (

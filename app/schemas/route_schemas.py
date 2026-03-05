@@ -4,7 +4,7 @@ Pydantic schemas for Route operations
 Request/response models with validation for route-related API endpoints
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, List
 from decimal import Decimal
@@ -31,6 +31,8 @@ class OrderBasic(BaseModel):
     order_number: str
     customer_name: str
     address_text: str
+    customer_phone: Optional[str] = None
+    document_number: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -42,7 +44,8 @@ class RouteGenerateRequest(BaseModel):
     """Schema for requesting route generation"""
     delivery_date: date = Field(..., description="Date for which to generate route")
 
-    @validator('delivery_date')
+    @field_validator('delivery_date')
+    @classmethod
     def validate_future_or_today(cls, v):
         """Ensure delivery date is not in the past"""
         if v < date.today():
@@ -74,6 +77,8 @@ class RouteStopResponse(BaseModel):
     actual_arrival: Optional[datetime]
     delivered: bool
     delivery_notes: Optional[str]
+    status: Optional[str] = 'PENDIENTE'
+    incident_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -87,17 +92,21 @@ class RouteResponse(BaseModel):
     status: RouteStatus
     total_distance_km: Optional[Decimal]
     estimated_duration_minutes: Optional[int]
+    actual_duration_minutes: Optional[int] = None
     assigned_driver: Optional[UserBasic]
     created_at: datetime
     updated_at: datetime
-    created_by: UserBasic
+    created_by: Optional[UserBasic] = None
     stops_count: Optional[int] = Field(None, description="Number of stops in route")
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
-    @validator('stops_count', pre=True, always=True)
-    def calculate_stops_count(cls, v, values):
+    @field_validator('stops_count', mode='before')
+    @classmethod
+    def calculate_stops_count(cls, v):
         """Calculate stops count from stops relationship if available"""
         # This will be populated by the API endpoint
         return v

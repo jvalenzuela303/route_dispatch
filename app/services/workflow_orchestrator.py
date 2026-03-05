@@ -57,8 +57,13 @@ class WorkflowOrchestrator:
         self.order_service = OrderService(db)
         self.invoice_service = InvoiceService(db)
         self.route_service = RouteOptimizationService(db)
-        self.notification_service = NotificationService(db)
         self.audit_service = AuditService(db)
+
+        # NotificationService is optional - requires SMTP configuration
+        try:
+            self.notification_service = NotificationService(db)
+        except Exception:
+            self.notification_service = None
 
     def create_order_workflow(
         self,
@@ -99,6 +104,7 @@ class WorkflowOrchestrator:
             user=user,
             customer_email=order_data.customer_email,
             notes=order_data.notes,
+            document_number=order_data.document_number,
             override_delivery_date=order_data.override_delivery_date,
             override_reason=order_data.override_reason
         )

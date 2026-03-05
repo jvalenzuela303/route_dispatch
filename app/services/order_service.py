@@ -84,6 +84,7 @@ class OrderService:
         user: User,
         customer_email: Optional[str] = None,
         notes: Optional[str] = None,
+        document_number: str = '',
         override_delivery_date: Optional[date] = None,
         override_reason: Optional[str] = None,
         created_at: Optional[datetime] = None
@@ -170,7 +171,8 @@ class OrderService:
             delivery_date=delivery_date,
             order_status=OrderStatus.PENDIENTE,
             created_by_user_id=user.id,
-            notes=notes
+            notes=notes,
+            document_number=document_number
         )
 
         try:

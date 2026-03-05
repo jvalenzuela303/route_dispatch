@@ -226,8 +226,13 @@ async def get_current_user_info(
         "id": str(current_user.id),
         "username": current_user.username,
         "email": current_user.email,
-        "role": current_user.role.role_name,
-        "active_status": current_user.active_status,
+        "full_name": current_user.username,  # Use username as display name
+        "is_active": current_user.active_status,
+        "role": {
+            "id": str(current_user.role.id),
+            "name": current_user.role.role_name,
+            "permissions": current_user.role.permissions
+        },
         "created_at": current_user.created_at.isoformat(),
         "updated_at": current_user.updated_at.isoformat()
     }

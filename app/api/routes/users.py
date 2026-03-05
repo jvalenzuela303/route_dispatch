@@ -125,7 +125,7 @@ async def list_users(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
     active_only: bool = Query(True, description="Only return active users"),
-    current_user: User = Depends(require_roles(['Administrador', 'Encargado Bodega'])),
+    current_user: User = Depends(require_roles(['Administrador', 'Encargado de Bodega'])),
     db: Session = Depends(get_db)
 ) -> List[UserResponse]:
     """
@@ -167,6 +167,57 @@ async def list_users(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while listing users"
         )
+
+
+@router.get(
+    "/roles",
+    response_model=list,
+    status_code=status.HTTP_200_OK,
+    summary="List roles",
+    description="List all available roles for user assignment"
+)
+async def list_roles(
+    current_user: User = Depends(require_roles(['Administrador'])),
+    db: Session = Depends(get_db)
+) -> list:
+    """Return all roles for use in user create/edit forms."""
+    from app.models.models import Role
+    roles = db.query(Role).order_by(Role.role_name).all()
+    return [
+        {"id": str(r.id), "role_name": r.role_name, "description": r.description}
+        for r in roles
+    ]
+
+
+@router.get(
+    "/drivers",
+    response_model=List[UserResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List drivers",
+    description="List all active users with Repartidor role (for route assignment)"
+)
+async def list_drivers(
+    current_user: User = Depends(require_roles(['Administrador', 'Encargado de Bodega'])),
+    db: Session = Depends(get_db)
+) -> List[UserResponse]:
+    """
+    Get all active drivers (Repartidor role) for route assignment
+
+    Returns:
+        List of active Repartidor users
+    """
+    from app.models.models import Role
+    drivers = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.role_name == 'Repartidor',
+            User.active_status == True
+        )
+        .order_by(User.username)
+        .all()
+    )
+    return [UserResponse.model_validate(u) for u in drivers]
 
 
 @router.get(

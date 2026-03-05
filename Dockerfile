@@ -9,12 +9,15 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies required for PostGIS/psycopg2
+# Install system dependencies required for PostGIS/psycopg2 and pygraphviz
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
     libpq-dev \
     curl \
+    graphviz \
+    graphviz-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage 2: Build stage
@@ -41,6 +44,7 @@ ENV PATH=/root/.local/bin:$PATH
 COPY ./app ./app
 COPY ./alembic.ini ./alembic.ini
 COPY ./migrations ./migrations
+COPY ./tests ./tests
 
 # Expose application port
 EXPOSE 8000

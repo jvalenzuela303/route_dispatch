@@ -103,12 +103,12 @@ class AuthService:
         if not user:
             # Log failed login attempt
             self.audit_service.log_action(
-                user_id=None,
                 action="LOGIN_FAILED",
                 entity_type="USER",
+                result=AuditResult.DENIED,
+                user=None,
                 entity_id=None,
                 details={"username": username, "reason": "user_not_found"},
-                result=AuditResult.DENIED,
                 ip_address=ip_address
             )
             raise InvalidCredentialsError("Invalid username or password")
@@ -117,12 +117,12 @@ class AuthService:
         if not self.verify_password(password, user.password_hash):
             # Log failed login attempt
             self.audit_service.log_action(
-                user_id=user.id,
                 action="LOGIN_FAILED",
                 entity_type="USER",
+                result=AuditResult.DENIED,
+                user=user,
                 entity_id=user.id,
                 details={"username": username, "reason": "invalid_password"},
-                result=AuditResult.DENIED,
                 ip_address=ip_address
             )
             raise InvalidCredentialsError("Invalid username or password")
@@ -130,12 +130,12 @@ class AuthService:
         # Check if user is active
         if not user.active_status:
             self.audit_service.log_action(
-                user_id=user.id,
                 action="LOGIN_FAILED",
                 entity_type="USER",
+                result=AuditResult.DENIED,
+                user=user,
                 entity_id=user.id,
                 details={"username": username, "reason": "user_inactive"},
-                result=AuditResult.DENIED,
                 ip_address=ip_address
             )
             raise UserInactiveError("User account is deactivated")
@@ -146,12 +146,12 @@ class AuthService:
 
         # Log successful login
         self.audit_service.log_action(
-            user_id=user.id,
             action="LOGIN_SUCCESS",
             entity_type="USER",
+            result=AuditResult.SUCCESS,
+            user=user,
             entity_id=user.id,
             details={"username": username, "role": user.role.role_name},
-            result=AuditResult.SUCCESS,
             ip_address=ip_address
         )
 
@@ -184,12 +184,12 @@ class AuthService:
 
         if not db_token:
             self.audit_service.log_action(
-                user_id=None,
                 action="REFRESH_TOKEN_FAILED",
                 entity_type="REFRESH_TOKEN",
+                result=AuditResult.DENIED,
+                user=None,
                 entity_id=None,
                 details={"reason": "token_not_found"},
-                result=AuditResult.DENIED,
                 ip_address=ip_address
             )
             raise InvalidTokenError("Invalid refresh token")
@@ -197,12 +197,12 @@ class AuthService:
         # Check if token is revoked
         if db_token.is_revoked:
             self.audit_service.log_action(
-                user_id=db_token.user_id,
                 action="REFRESH_TOKEN_FAILED",
                 entity_type="REFRESH_TOKEN",
-                entity_id=db_token.id,
-                details={"reason": "token_revoked"},
                 result=AuditResult.DENIED,
+                user=None,
+                entity_id=db_token.id,
+                details={"reason": "token_revoked", "user_id": str(db_token.user_id)},
                 ip_address=ip_address
             )
             raise InvalidTokenError("Refresh token has been revoked")
@@ -210,12 +210,12 @@ class AuthService:
         # Check if token is expired
         if db_token.expires_at < datetime.utcnow():
             self.audit_service.log_action(
-                user_id=db_token.user_id,
                 action="REFRESH_TOKEN_FAILED",
                 entity_type="REFRESH_TOKEN",
-                entity_id=db_token.id,
-                details={"reason": "token_expired"},
                 result=AuditResult.DENIED,
+                user=None,
+                entity_id=db_token.id,
+                details={"reason": "token_expired", "user_id": str(db_token.user_id)},
                 ip_address=ip_address
             )
             raise TokenExpiredError("Refresh token has expired")
@@ -237,12 +237,12 @@ class AuthService:
 
         # Log successful token refresh
         self.audit_service.log_action(
-            user_id=user.id,
             action="REFRESH_TOKEN_SUCCESS",
             entity_type="REFRESH_TOKEN",
+            result=AuditResult.SUCCESS,
+            user=user,
             entity_id=db_token.id,
             details={"username": user.username},
-            result=AuditResult.SUCCESS,
             ip_address=ip_address
         )
 
@@ -283,14 +283,17 @@ class AuthService:
         db_token.is_revoked = True
         self.db.commit()
 
+        # Get user for audit log
+        user = self.db.query(User).filter(User.id == user_id).first()
+
         # Log logout
         self.audit_service.log_action(
-            user_id=user_id,
             action="LOGOUT",
             entity_type="REFRESH_TOKEN",
+            result=AuditResult.SUCCESS,
+            user=user,
             entity_id=db_token.id,
             details={"token_id": str(db_token.id)},
-            result=AuditResult.SUCCESS,
             ip_address=ip_address
         )
 

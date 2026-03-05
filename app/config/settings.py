@@ -19,13 +19,13 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql://claude_user:claude_pass@postgres:5432/claude_logistics",
+        default="postgresql://route_user:dev_password@127.0.0.1:5432/route",
         validation_alias="DATABASE_URL",
     )
 
     # Redis
     redis_url: str = Field(
-        default="redis://redis:6379/0",
+        default="redis://127.0.0.1:6379/0",
         validation_alias="REDIS_URL",
     )
 

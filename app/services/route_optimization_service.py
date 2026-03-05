@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 import numpy as np
 
-from sqlalchemy import text, func
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
@@ -269,7 +269,6 @@ class RouteOptimizationService:
         orders = self.db.query(Order).filter(
             Order.order_status == OrderStatus.DOCUMENTADO,
             Order.delivery_date == delivery_date,
-            Order.invoice_id.isnot(None),
             Order.address_coordinates.isnot(None)
         ).all()
 
@@ -286,16 +285,6 @@ class RouteOptimizationService:
             RouteOptimizationError: If any order is invalid
         """
         for order in orders:
-            # Check invoice
-            if not order.invoice_id:
-                raise RouteOptimizationError(
-                    f"Pedido {order.order_number} no tiene factura",
-                    details={
-                        "order_id": str(order.id),
-                        "order_number": order.order_number
-                    }
-                )
-
             # Check coordinates
             if not order.address_coordinates:
                 raise RouteOptimizationError(
@@ -322,17 +311,25 @@ class RouteOptimizationService:
         # Start with depot
         coordinates = [(self.depot_lat, self.depot_lon)]
 
-        # Extract coordinates from PostGIS geography
+        # Extract coordinates from PostGIS geography using raw SQL
+        # (Geography type requires ::geometry cast for ST_Y/ST_X)
         for order in orders:
-            # Use ST_Y for latitude, ST_X for longitude
-            # address_coordinates is already in SRID 4326 (WGS84)
-            lat = self.db.scalar(
-                func.ST_Y(order.address_coordinates)
-            )
-            lon = self.db.scalar(
-                func.ST_X(order.address_coordinates)
-            )
-            coordinates.append((lat, lon))
+            coords = self.db.execute(
+                text(
+                    "SELECT ST_Y(address_coordinates::geometry) AS lat, "
+                    "ST_X(address_coordinates::geometry) AS lon "
+                    "FROM orders WHERE id = :order_id"
+                ),
+                {"order_id": order.id}
+            ).first()
+
+            if coords is None or coords.lat is None or coords.lon is None:
+                raise RouteOptimizationError(
+                    f"Pedido {order.order_number} no tiene coordenadas válidas",
+                    details={"order_id": str(order.id)}
+                )
+
+            coordinates.append((float(coords.lat), float(coords.lon)))
 
         return coordinates
 

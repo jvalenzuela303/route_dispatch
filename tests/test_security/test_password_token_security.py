@@ -12,7 +12,7 @@ Test categories:
 """
 
 import pytest
-import jwt
+from jose import jwt
 from datetime import datetime, timedelta
 import uuid
 
