@@ -24,11 +24,12 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geography
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, Base, UUIDMixin
 from app.models.enums import (
     OrderStatus, SourceChannel, GeocodingConfidence,
     InvoiceType, RouteStatus, AuditResult,
-    NotificationChannel, NotificationStatus
+    NotificationChannel, NotificationStatus,
+    VehicleStatus, AlertType, GeofenceType, EvidenceType
 )
 
 
@@ -437,6 +438,17 @@ class Route(BaseModel):
         nullable=True,
         comment="Optimized sequence of order UUIDs: ['uuid1', 'uuid2', ...]"
     )
+    vehicle_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("vehicles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Vehicle assigned to execute this route"
+    )
+    assigned_load_kg: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(8, 2),
+        nullable=True,
+        comment="Total load weight assigned to this route in kg"
+    )
 
     # Relationships
     assigned_driver: Mapped[Optional["User"]] = relationship(
@@ -444,10 +456,25 @@ class Route(BaseModel):
         foreign_keys=[assigned_driver_id],
         back_populates="assigned_routes"
     )
+    vehicle: Mapped[Optional["Vehicle"]] = relationship(
+        "Vehicle",
+        foreign_keys=[vehicle_id],
+        back_populates="routes"
+    )
     orders: Mapped[List["Order"]] = relationship(
         "Order",
         foreign_keys="Order.assigned_route_id",
         back_populates="assigned_route"
+    )
+    gps_positions: Mapped[List["GPSPosition"]] = relationship(
+        "GPSPosition",
+        back_populates="route",
+        cascade="all, delete-orphan"
+    )
+    delivery_evidences: Mapped[List["DeliveryEvidence"]] = relationship(
+        "DeliveryEvidence",
+        back_populates="route",
+        cascade="all, delete-orphan"
     )
 
     # Indexes
@@ -455,6 +482,7 @@ class Route(BaseModel):
         Index("ix_routes_route_date", "route_date"),
         Index("ix_routes_status", "status"),
         Index("ix_routes_assigned_driver_id", "assigned_driver_id"),
+        Index("ix_routes_vehicle_id", "vehicle_id"),
     )
 
     def __repr__(self) -> str:
@@ -680,4 +708,480 @@ class NotificationLog(BaseModel):
         return (
             f"<NotificationLog(id={self.id}, order_id={self.order_id}, "
             f"channel={self.channel.value}, status={self.status.value})>"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────
+# TMS / GPS MODELS (Phase 2 — vehicle management and GPS tracking)
+# ─────────────────────────────────────────────────────────────────
+
+class Vehicle(BaseModel):
+    """
+    Delivery vehicles (trucks) in the fleet
+
+    Tracks vehicle capacity, assignment status and links to the GPS
+    device installed on the vehicle so that telemetry from external
+    providers (e.g. Wialon) can be mapped back to a DB record.
+    """
+    __tablename__ = "vehicles"
+
+    plate_number: Mapped[str] = mapped_column(
+        String(20),
+        unique=True,
+        nullable=False,
+        comment="Chilean vehicle license plate (e.g. BCDF-12)"
+    )
+    alias: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Human-friendly name (e.g. 'Camión 1')"
+    )
+    brand: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Vehicle brand (e.g. Mercedes-Benz)"
+    )
+    model_name: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Vehicle model name"
+    )
+    year: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Manufacturing year"
+    )
+    max_load_kg: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(8, 2),
+        nullable=True,
+        comment="Maximum cargo capacity in kilograms"
+    )
+    max_volume_m3: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 3),
+        nullable=True,
+        comment="Maximum cargo volume in cubic metres"
+    )
+    status: Mapped[VehicleStatus] = mapped_column(
+        SQLEnum(VehicleStatus, name="vehicle_status_enum"),
+        nullable=False,
+        default=VehicleStatus.AVAILABLE,
+        comment="Current operational status"
+    )
+    assigned_driver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Driver currently assigned to this vehicle"
+    )
+    gps_device_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="External GPS device / Wialon unit ID for telemetry mapping"
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Soft-delete flag; False = vehicle removed from fleet"
+    )
+
+    # Relationships
+    assigned_driver: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[assigned_driver_id]
+    )
+    routes: Mapped[List["Route"]] = relationship(
+        "Route",
+        foreign_keys="Route.vehicle_id",
+        back_populates="vehicle"
+    )
+    gps_positions: Mapped[List["GPSPosition"]] = relationship(
+        "GPSPosition",
+        back_populates="vehicle",
+        cascade="all, delete-orphan"
+    )
+    gps_alerts: Mapped[List["GPSAlert"]] = relationship(
+        "GPSAlert",
+        back_populates="vehicle",
+        cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_vehicles_plate_number", "plate_number"),
+        Index("ix_vehicles_status", "status"),
+        Index("ix_vehicles_assigned_driver_id", "assigned_driver_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Vehicle(id={self.id}, plate='{self.plate_number}', status={self.status.value})>"
+
+
+class GPSPosition(Base, UUIDMixin):
+    """
+    Time-series GPS telemetry positions for each vehicle
+
+    Intentionally omits updated_at — positions are immutable once recorded.
+    Supports two source channels:
+    - BROWSER: Geolocation API pushed by the driver's mobile browser/APK
+    - WIALON / MQTT: Hardware GPS device telemetry via webhook or broker
+    """
+    __tablename__ = "gps_positions"
+
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("vehicles.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Vehicle this position belongs to"
+    )
+    route_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Active route at time of position recording (if any)"
+    )
+    coordinates: Mapped[Optional[str]] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326),
+        nullable=False,
+        comment="WGS84 geographic point (PostGIS Geography)"
+    )
+    speed_kmh: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 1),
+        nullable=True,
+        comment="Vehicle speed in km/h at time of recording"
+    )
+    heading_degrees: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 1),
+        nullable=True,
+        comment="Compass heading in degrees (0-360)"
+    )
+    altitude_m: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(7, 2),
+        nullable=True,
+        comment="Altitude above sea level in metres"
+    )
+    accuracy_m: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(6, 1),
+        nullable=True,
+        comment="GPS accuracy radius in metres"
+    )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="BROWSER",
+        comment="Origin of position: BROWSER | WIALON | MQTT"
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        comment="Timestamp from device (may differ from server created_at)"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        server_default="now()",
+        comment="Server receipt timestamp"
+    )
+
+    # Relationships
+    vehicle: Mapped["Vehicle"] = relationship(
+        "Vehicle",
+        back_populates="gps_positions"
+    )
+    route: Mapped[Optional["Route"]] = relationship(
+        "Route",
+        back_populates="gps_positions"
+    )
+
+    __table_args__ = (
+        Index("ix_gps_positions_vehicle_id", "vehicle_id"),
+        Index("ix_gps_positions_route_id", "route_id"),
+        Index("ix_gps_positions_recorded_at", "recorded_at"),
+        Index(
+            "ix_gps_positions_coordinates",
+            "coordinates",
+            postgresql_using="gist"
+        ),
+        # Critical composite index for "latest position per vehicle" queries
+        Index("ix_gps_positions_vehicle_recorded", "vehicle_id", "recorded_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GPSPosition(vehicle_id={self.vehicle_id}, recorded_at={self.recorded_at}, source='{self.source}')>"
+
+
+class Geofence(BaseModel):
+    """
+    Geographic alert zones
+
+    Supports two geometry types:
+    - CIRCULAR: center_point + radius_meters (uses ST_DWithin)
+    - POLYGON: polygon_area (uses ST_Within)
+
+    When a vehicle enters or exits an active geofence a GPSAlert is created.
+    """
+    __tablename__ = "geofences"
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Human-readable geofence name (e.g. 'Zona Centro Rancagua')"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Optional description of the zone's purpose"
+    )
+    geofence_type: Mapped[GeofenceType] = mapped_column(
+        SQLEnum(GeofenceType, name="geofence_type_enum"),
+        nullable=False,
+        comment="Geometry type: CIRCULAR or POLYGON"
+    )
+    center_point: Mapped[Optional[str]] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326),
+        nullable=True,
+        comment="Center of circular geofence (CIRCULAR type only)"
+    )
+    radius_meters: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(8, 2),
+        nullable=True,
+        comment="Radius in metres for CIRCULAR geofences"
+    )
+    polygon_area: Mapped[Optional[str]] = mapped_column(
+        Geography(geometry_type="POLYGON", srid=4326),
+        nullable=True,
+        comment="Polygon boundary for POLYGON geofences"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="Only active geofences trigger alerts"
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="Admin user who created this geofence"
+    )
+
+    # Relationships
+    created_by: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[created_by_user_id]
+    )
+    alerts: Mapped[List["GPSAlert"]] = relationship(
+        "GPSAlert",
+        back_populates="geofence"
+    )
+
+    __table_args__ = (
+        Index("ix_geofences_is_active", "is_active"),
+        Index(
+            "ix_geofences_center_point",
+            "center_point",
+            postgresql_using="gist"
+        ),
+        Index(
+            "ix_geofences_polygon_area",
+            "polygon_area",
+            postgresql_using="gist"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Geofence(id={self.id}, name='{self.name}', type={self.geofence_type.value})>"
+
+
+class GPSAlert(BaseModel):
+    """
+    Alerts generated by GPS event detection
+
+    Created automatically by gps_service when:
+    - Vehicle enters/exits a geofence
+    - Vehicle deviates from its planned route
+    - Vehicle exceeds speed threshold
+    - Vehicle stops for an unusually long period
+
+    Alerts are broadcast via WebSocket to the logistics dashboard and
+    must be acknowledged by a supervisor.
+    """
+    __tablename__ = "gps_alerts"
+
+    vehicle_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("vehicles.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Vehicle that triggered this alert"
+    )
+    route_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Active route when alert was generated"
+    )
+    geofence_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("geofences.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Geofence that triggered this alert (if applicable)"
+    )
+    alert_type: Mapped[AlertType] = mapped_column(
+        SQLEnum(AlertType, name="alert_type_enum"),
+        nullable=False,
+        comment="Category of GPS alert"
+    )
+    message: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Human-readable alert description"
+    )
+    position_lat: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 7),
+        nullable=True,
+        comment="Latitude snapshot when alert was triggered"
+    )
+    position_lon: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 7),
+        nullable=True,
+        comment="Longitude snapshot when alert was triggered"
+    )
+    is_acknowledged: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="True once a supervisor has reviewed this alert"
+    )
+    acknowledged_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Supervisor who acknowledged the alert"
+    )
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(
+        nullable=True,
+        comment="When the alert was acknowledged"
+    )
+    details: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Extra context (e.g. speed value, geofence name)"
+    )
+
+    # Relationships
+    vehicle: Mapped["Vehicle"] = relationship(
+        "Vehicle",
+        back_populates="gps_alerts"
+    )
+    geofence: Mapped[Optional["Geofence"]] = relationship(
+        "Geofence",
+        back_populates="alerts"
+    )
+
+    __table_args__ = (
+        Index("ix_gps_alerts_vehicle_id", "vehicle_id"),
+        Index("ix_gps_alerts_alert_type", "alert_type"),
+        Index("ix_gps_alerts_is_acknowledged", "is_acknowledged"),
+        Index("ix_gps_alerts_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GPSAlert(id={self.id}, vehicle_id={self.vehicle_id}, "
+            f"type={self.alert_type.value}, ack={self.is_acknowledged})>"
+        )
+
+
+class DeliveryEvidence(BaseModel):
+    """
+    Photographic and signature evidence captured by the driver's APK
+
+    Stored on the local filesystem (or object storage in production) and
+    linked to a specific order within a route.  The APK uploads evidence
+    at the moment of confirming each delivery stop.
+
+    file_path: relative path inside UPLOAD_DIR volume
+    file_url:  public URL served via /uploads/ static route
+    """
+    __tablename__ = "delivery_evidences"
+
+    route_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("routes.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Route during which this evidence was captured"
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Order this evidence belongs to"
+    )
+    evidence_type: Mapped[EvidenceType] = mapped_column(
+        SQLEnum(EvidenceType, name="evidence_type_enum"),
+        nullable=False,
+        comment="Media type: PHOTO or SIGNATURE"
+    )
+    file_path: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        comment="Relative filesystem path inside upload volume"
+    )
+    file_url: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Public URL for browser access via /uploads/"
+    )
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="File size in bytes"
+    )
+    mime_type: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="MIME type (e.g. image/jpeg, image/png)"
+    )
+    captured_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        comment="Device timestamp when evidence was captured"
+    )
+    gps_lat: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 7),
+        nullable=True,
+        comment="GPS latitude at moment of capture"
+    )
+    gps_lon: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 7),
+        nullable=True,
+        comment="GPS longitude at moment of capture"
+    )
+    uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="Driver (user) who uploaded this evidence"
+    )
+
+    # Relationships
+    route: Mapped["Route"] = relationship(
+        "Route",
+        back_populates="delivery_evidences"
+    )
+    order: Mapped["Order"] = relationship(
+        "Order",
+        foreign_keys=[order_id]
+    )
+    uploaded_by: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[uploaded_by_user_id]
+    )
+
+    __table_args__ = (
+        Index("ix_delivery_evidences_route_id", "route_id"),
+        Index("ix_delivery_evidences_order_id", "order_id"),
+        Index("ix_delivery_evidences_evidence_type", "evidence_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DeliveryEvidence(id={self.id}, order_id={self.order_id}, "
+            f"type={self.evidence_type.value})>"
         )

@@ -183,6 +183,25 @@ class Settings(BaseSettings):
         description="SMTP connection timeout in seconds"
     )
 
+    # File uploads (delivery evidence: photos, signatures)
+    upload_dir: str = Field(
+        default="/uploads",
+        validation_alias="UPLOAD_DIR",
+        description="Directory where delivery evidence files are stored"
+    )
+
+    # GPS / Wialon webhook
+    wialon_webhook_token: str = Field(
+        default="changeme_wialon_token",
+        validation_alias="WIALON_WEBHOOK_TOKEN",
+        description="Pre-shared secret for Wialon GPS hardware webhook"
+    )
+    ws_position_interval_seconds: int = Field(
+        default=10,
+        validation_alias="WS_POSITION_INTERVAL_SECONDS",
+        description="Minimum seconds between GPS position pushes from driver APK"
+    )
+
     # Model configuration
     model_config = SettingsConfigDict(
         env_file=".env",

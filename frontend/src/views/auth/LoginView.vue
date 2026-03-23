@@ -205,7 +205,7 @@ const handleSubmit = async () => {
         </div>
 
         <p class="text-center mt-6 text-xs text-gray-400 uppercase tracking-wider">
-          Claude Logistics © {{ new Date().getFullYear() }}
+          Logistics © {{ new Date().getFullYear() }}
         </p>
       </div>
     </div>

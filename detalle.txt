@@ -1,0 +1,123 @@
+2. Sistema de Gestión de Transporte (TMS)
+
+Para despachar camiones necesitas un Transportation Management System (TMS).
+
+Este sistema planifica rutas, asigna camiones y conductores, y controla entregas.
+
+Funciones clave
+
+Planificación de rutas
+
+Optimización de entregas
+
+Asignación de camiones
+
+Control de carga
+
+Control de conductores
+
+Gestión de paradas
+
+Confirmación de entrega
+
+Reportes de despacho
+
+Ejemplo de flujo
+
+Pedido entra al sistema
+
+WMS prepara el pedido
+
+TMS genera la ruta
+
+Se asigna camión
+
+Se envía la ruta al conductor
+
+3. GPS en los camiones
+
+Debes instalar dispositivos GPS en cada camión.
+
+Un sistema de rastreo vehicular permite saber ubicación, velocidad, paradas y rutas en tiempo real.
+
+Ejemplo de plataforma de seguimiento:
+
+Wialon
+
+Esta plataforma permite monitorear vehículos mediante GPS y telemetría en una plataforma centralizada.
+
+Lo que permite el GPS
+
+Ver ubicación del camión
+
+Validar que siga la ruta
+
+Detectar desvíos
+
+Controlar tiempos de entrega
+
+Geocercas (entrada o salida de zonas)
+
+Alertas
+
+4. Aplicación móvil para conductores
+
+Los choferes deben tener una app para:
+
+Funciones:
+
+Ver ruta del día
+
+Navegación GPS
+
+Confirmar entregas
+
+Fotografías de entrega
+
+Firma del cliente
+
+Reportar problemas
+
+5. Panel de control (centro logístico)
+
+La empresa debe tener un dashboard logístico.
+
+Debe mostrar:
+
+Camiones en mapa
+
+Estado de entregas
+
+Rutas activas
+
+retrasos
+
+entregas realizadas
+
+KPI logísticos
+
+6. Arquitectura recomendada
+
+Una arquitectura típica sería:
+
+ERP / Facturación
+        │
+        │
+     WMS (bodega)
+        │
+        │
+     TMS (rutas)
+        │
+        │
+   GPS Platform
+        │
+        │
+App Conductores + Dashboard
+7. Hardware necesario
+
+GPS para cada camión
+
+Smartphone para conductor
+
+Lectores de código de barras
+

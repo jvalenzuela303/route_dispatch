@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies.auth import get_current_active_user, require_roles
 from app.api.dependencies.database import get_db
 from app.services.route_optimization_service import RouteOptimizationService
+from app.services.vehicle_service import VehicleService
 from app.schemas.route_schemas import (
     RouteResponse,
     RouteDetailResponse,
@@ -35,7 +36,8 @@ from app.models.models import User, Route, Order
 from app.models.enums import RouteStatus
 from app.exceptions import (
     RouteOptimizationError,
-    ValidationError
+    ValidationError,
+    BusinessRuleViolationError,
 )
 from app.config.settings import get_settings
 
@@ -141,6 +143,14 @@ async def activate_route(
                 detail=f"Route {route_id} not found"
             )
 
+        # Assign vehicle to route (sets vehicle status → IN_ROUTE)
+        if activation_data.vehicle_id:
+            vehicle_service = VehicleService(db)
+            vehicle_service.assign_to_route(
+                vehicle_id=activation_data.vehicle_id,
+                route_id=route_id,
+            )
+
         # Activate the existing route directly (DRAFT → ACTIVE)
         service = RouteOptimizationService(db)
         activated_route = service.activate_route(
@@ -167,6 +177,16 @@ async def activate_route(
             .count()
         )
 
+        # Collect vehicle info if assigned
+        vehicle_info = None
+        if activated_route.vehicle_id and activated_route.vehicle:
+            v = activated_route.vehicle
+            vehicle_info = {
+                'id': str(v.id),
+                'plate_number': v.plate_number,
+                'alias': v.alias,
+            }
+
         return {
             'route': RouteDetailResponse.from_orm(activated_route),
             'orders_count': orders_count,
@@ -176,6 +196,7 @@ async def activate_route(
                 'username': activated_route.assigned_driver.username,
                 'email': activated_route.assigned_driver.email
             },
+            'vehicle': vehicle_info,
             'status': activated_route.status.value,
             'next_steps': [
                 f"Ruta {activated_route.route_name} ACTIVADA",
@@ -186,11 +207,8 @@ async def activate_route(
             'workflow_status': 'ROUTE_ACTIVATED'
         }
 
-    except (RouteOptimizationError, ValidationError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message
-        )
+    except BusinessRuleViolationError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.to_dict())
 
 
 @router.get(

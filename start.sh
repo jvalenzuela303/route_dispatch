@@ -57,7 +57,10 @@ check_deps() {
     done
   fi
 
-  [[ $missing -gt 0 ]] && { error "Instala las dependencias faltantes y reintenta."; exit 1; }
+  if [[ $missing -gt 0 ]]; then
+    error "Instala las dependencias faltantes y reintenta."
+    exit 1
+  fi
 }
 
 # ── Verificar .env ────────────────────────────────────────────────────────────
@@ -81,36 +84,69 @@ start_infra() {
   header "Levantando infraestructura (PostgreSQL + Redis)"
   docker-compose up -d postgres redis
   info "Esperando que la base de datos esté lista..."
+
   local retries=0
   until docker-compose exec -T postgres pg_isready -U "${POSTGRES_USER:-claude_user}" &>/dev/null; do
     retries=$((retries + 1))
-    [[ $retries -ge 20 ]] && { error "PostgreSQL no respondió a tiempo."; exit 1; }
+    echo -ne "  ${CYAN}[INFO]${NC}  PostgreSQL iniciando... (intento $retries/20)\r"
+    [[ $retries -ge 20 ]] && { echo ""; error "PostgreSQL no respondió a tiempo."; exit 1; }
     sleep 2
   done
+  echo ""
   success "PostgreSQL listo"
 
+  retries=0   # <-- reiniciar contador para Redis
   until docker-compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; do
     retries=$((retries + 1))
-    [[ $retries -ge 20 ]] && { error "Redis no respondió a tiempo."; exit 1; }
+    echo -ne "  ${CYAN}[INFO]${NC}  Redis iniciando... (intento $retries/20)\r"
+    [[ $retries -ge 20 ]] && { echo ""; error "Redis no respondió a tiempo."; exit 1; }
     sleep 2
   done
+  echo ""
   success "Redis listo"
 }
 
 # ── Modo: Docker completo ─────────────────────────────────────────────────────
 start_docker() {
-  header "Construyendo y levantando todos los servicios (Docker)"
-  docker-compose up -d --build
+  header "Construyendo imágenes Docker"
+  docker-compose build          # muestra output del build en tiempo real
   echo ""
-  info "Esperando que los servicios respondan..."
-  sleep 5
 
+  header "Levantando todos los servicios"
+  docker-compose up -d          # arranca los contenedores en background
+  echo ""
+
+  # ── Esperar backend ──────────────────────────────────────────────────────
+  info "Esperando que el backend responda (hasta 90 s)..."
   local retries=0
   until curl -sf http://localhost:8000/health &>/dev/null; do
     retries=$((retries + 1))
-    [[ $retries -ge 15 ]] && { warn "API aún no responde — revisa: docker-compose logs app"; break; }
+    echo -ne "  ${CYAN}[INFO]${NC}  API backend iniciando... (intento $retries/30)\r"
+    [[ $retries -ge 30 ]] && {
+      echo ""
+      warn "API aún no responde — revisa con: docker-compose logs app"
+      break
+    }
     sleep 3
   done
+  echo ""
+  [[ $retries -lt 30 ]] && success "Backend listo → http://localhost:8000"
+
+  # ── Esperar frontend ─────────────────────────────────────────────────────
+  info "Esperando que el frontend responda (hasta 60 s)..."
+  retries=0
+  until curl -sf http://localhost:3000 &>/dev/null; do
+    retries=$((retries + 1))
+    echo -ne "  ${CYAN}[INFO]${NC}  Frontend iniciando... (intento $retries/20)\r"
+    [[ $retries -ge 20 ]] && {
+      echo ""
+      warn "Frontend aún no responde — revisa con: docker-compose logs frontend"
+      break
+    }
+    sleep 3
+  done
+  echo ""
+  [[ $retries -lt 20 ]] && success "Frontend listo → http://localhost:3000"
 
   echo ""
   success "Sistema levantado"

@@ -46,3 +46,6 @@ requests==2.31.0
 # numpy>=2.0 required for Python 3.14 (1.26 has no cp314 wheel)
 ortools>=9.10
 numpy>=2.0
+
+# Image processing for delivery photo evidence (resize before storage)
+Pillow>=10.0.0

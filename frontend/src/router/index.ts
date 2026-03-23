@@ -26,6 +26,13 @@ const UserEditView = () => import('@/views/users/UserEditView.vue')
 const ReportsView = () => import('@/views/reports/ReportsView.vue')
 const AuditLogsView = () => import('@/views/reports/AuditLogsView.vue')
 
+// Vehicles
+const VehiclesListView = () => import('@/views/vehicles/VehiclesListView.vue')
+const VehicleFormView = () => import('@/views/vehicles/VehicleFormView.vue')
+
+// Fleet / GPS
+const LiveMapView = () => import('@/views/fleet/LiveMapView.vue')
+
 // Layout
 const MainLayout = () => import('@/components/common/MainLayout.vue')
 
@@ -148,6 +155,44 @@ const routes: RouteRecordRaw[] = [
           roles: ['Administrador'],
         },
       },
+      // Vehicles
+      {
+        path: 'vehicles',
+        name: 'vehicles',
+        component: VehiclesListView,
+        meta: {
+          title: 'Vehículos',
+          roles: ['Administrador', 'Encargado de Bodega'],
+        },
+      },
+      {
+        path: 'vehicles/create',
+        name: 'vehicles-create',
+        component: VehicleFormView,
+        meta: {
+          title: 'Nuevo Vehículo',
+          roles: ['Administrador', 'Encargado de Bodega'],
+        },
+      },
+      {
+        path: 'vehicles/:id/edit',
+        name: 'vehicles-edit',
+        component: VehicleFormView,
+        meta: {
+          title: 'Editar Vehículo',
+          roles: ['Administrador', 'Encargado de Bodega'],
+        },
+      },
+      // Fleet / GPS live map
+      {
+        path: 'fleet',
+        name: 'fleet',
+        component: LiveMapView,
+        meta: {
+          title: 'Mapa en Vivo',
+          roles: ['Administrador', 'Encargado de Bodega'],
+        },
+      },
       // Reports
       {
         path: 'reports',
@@ -187,8 +232,8 @@ router.beforeEach(async (to, _from, next) => {
 
   // Update page title
   document.title = to.meta.title
-    ? `${to.meta.title} | Claude Logistics`
-    : 'Claude Logistics'
+    ? `${to.meta.title} | Logistics`
+    : 'Logistics'
 
   // Check if route requires authentication
   if (to.meta.requiresAuth || to.matched.some((record) => record.meta.requiresAuth)) {

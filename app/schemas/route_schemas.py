@@ -56,6 +56,9 @@ class RouteGenerateRequest(BaseModel):
 class RouteActivation(BaseModel):
     """Schema for activating a route and assigning to driver"""
     driver_id: uuid.UUID = Field(..., description="UUID of driver to assign route to")
+    vehicle_id: Optional[uuid.UUID] = Field(
+        None, description="UUID of vehicle to assign to this route"
+    )
 
 
 class RouteStopUpdate(BaseModel):
@@ -94,6 +97,8 @@ class RouteResponse(BaseModel):
     estimated_duration_minutes: Optional[int]
     actual_duration_minutes: Optional[int] = None
     assigned_driver: Optional[UserBasic]
+    vehicle_id: Optional[uuid.UUID] = None
+    assigned_load_kg: Optional[Decimal] = None
     created_at: datetime
     updated_at: datetime
     created_by: Optional[UserBasic] = None

@@ -3,9 +3,12 @@ Claude Logistics API - Main FastAPI Application
 Sistema de gestión de logística para botillería en Rancagua, Chile
 """
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
 from app.api.routes.auth import router as auth_router
@@ -14,6 +17,9 @@ from app.api.routes.orders import router as orders_router
 from app.api.routes.invoices import router as invoices_router
 from app.api.routes.delivery_routes import router as delivery_routes_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.vehicles import router as vehicles_router
+from app.api.routes.evidence import router as evidence_router
+from app.api.routes.gps import router as gps_router
 from app.api.middleware.error_handler import register_exception_handlers
 from app.config import get_settings
 
@@ -54,6 +60,9 @@ def create_application() -> FastAPI:
     app.include_router(invoices_router)
     app.include_router(delivery_routes_router)
     app.include_router(reports_router)
+    app.include_router(vehicles_router)
+    app.include_router(evidence_router)
+    app.include_router(gps_router)
 
     # Root endpoint
     @app.get("/", tags=["root"])
@@ -72,6 +81,9 @@ def create_application() -> FastAPI:
                     "orders": "/api/orders",
                     "invoices": "/api/invoices",
                     "routes": "/api/routes",
+                    "vehicles": "/api/vehicles",
+                    "gps": "/api/gps",
+                    "ws_fleet": "/ws/fleet",
                     "reports": "/api/reports",
                     "auth": "/api/auth",
                     "users": "/api/users"
@@ -96,6 +108,15 @@ async def startup_event():
     settings = get_settings()
     print(f"Starting {settings.app_name} v{settings.app_version}")
     print(f"Debug mode: {settings.debug}")
+
+    # Mount upload directory for delivery evidence (photos / signatures)
+    upload_dir = settings.upload_dir
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+        app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+        print(f"Uploads directory ready: {upload_dir}")
+    except Exception as e:
+        print(f"Warning: Could not mount uploads directory '{upload_dir}': {e}")
 
 
 @app.on_event("shutdown")

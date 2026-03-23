@@ -118,3 +118,55 @@ class NotificationStatus(str, PyEnum):
     PENDING = "PENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+
+
+class VehicleStatus(str, PyEnum):
+    """
+    Vehicle operational status
+
+    AVAILABLE: Vehicle ready to be assigned to a route
+    IN_ROUTE: Vehicle currently executing a delivery route
+    MAINTENANCE: Vehicle out of service for maintenance
+    """
+    AVAILABLE = "AVAILABLE"
+    IN_ROUTE = "IN_ROUTE"
+    MAINTENANCE = "MAINTENANCE"
+
+
+class AlertType(str, PyEnum):
+    """
+    GPS alert event types
+
+    GEOFENCE_ENTRY: Vehicle entered a defined geofence zone
+    GEOFENCE_EXIT: Vehicle exited a defined geofence zone
+    ROUTE_DEVIATION: Vehicle deviated significantly from planned route
+    SPEEDING: Vehicle exceeded speed threshold
+    LONG_STOP: Vehicle stopped for unusually long time
+    """
+    GEOFENCE_ENTRY = "GEOFENCE_ENTRY"
+    GEOFENCE_EXIT = "GEOFENCE_EXIT"
+    ROUTE_DEVIATION = "ROUTE_DEVIATION"
+    SPEEDING = "SPEEDING"
+    LONG_STOP = "LONG_STOP"
+
+
+class GeofenceType(str, PyEnum):
+    """
+    Geofence geometry type
+
+    CIRCULAR: Circular zone defined by center point + radius
+    POLYGON: Arbitrary polygon zone defined by coordinate list
+    """
+    CIRCULAR = "CIRCULAR"
+    POLYGON = "POLYGON"
+
+
+class EvidenceType(str, PyEnum):
+    """
+    Delivery evidence media type
+
+    PHOTO: Photo taken at delivery location
+    SIGNATURE: Customer signature captured on screen
+    """
+    PHOTO = "PHOTO"
+    SIGNATURE = "SIGNATURE"
