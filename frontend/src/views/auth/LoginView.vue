@@ -16,6 +16,23 @@ const showPassword = ref(false)
 const isSubmitting = ref(false)
 const formError = ref('')
 
+// Usuarios de prueba (solo desarrollo)
+const testUsers = [
+  { label: '— Seleccionar usuario de prueba —', email: '', password: '' },
+  { label: 'Admin', email: 'admin@botilleria.cl', password: 'Admin2024!' },
+  { label: 'Bodega', email: 'bodega@botilleria.cl', password: 'Bodega2024!' },
+  { label: 'Vendedor', email: 'vendedor@botilleria.cl', password: 'Vendedor2024!' },
+  { label: 'Repartidor', email: 'repartidor@botilleria.cl', password: 'Repartidor2024!' },
+]
+
+const fillTestUser = (event: Event) => {
+  const selected = testUsers[(event.target as HTMLSelectElement).selectedIndex]
+  if (selected.email) {
+    email.value = selected.email
+    password.value = selected.password
+  }
+}
+
 const isValid = computed(() => {
   return email.value.length > 0 && password.value.length > 0
 })
@@ -114,6 +131,21 @@ const handleSubmit = async () => {
             <p class="text-gray-500 text-sm mt-1">
               Ingresa tus credenciales para continuar
             </p>
+          </div>
+
+          <!-- Selector usuarios de prueba -->
+          <div class="mb-6">
+            <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+              Acceso rápido (pruebas)
+            </label>
+            <select
+              class="input text-sm text-gray-600"
+              @change="fillTestUser"
+            >
+              <option v-for="u in testUsers" :key="u.email" :value="u.email">
+                {{ u.label }}
+              </option>
+            </select>
           </div>
 
           <!-- Error -->
